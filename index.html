@@ -5,68 +5,26 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>レトロドット変換</title>
 <style>
-  body {
-    margin:0;
-    font-family: system-ui, -apple-system, sans-serif;
-    background:#0f1115;
-    color:#e6e6eb;
-    min-height: 100vh;
-    display: flex;
-    flex-direction: column;
-  }
+  body { margin:0; font-family: system-ui, -apple-system, sans-serif; background:#0f1115; color:#e6e6eb; min-height: 100vh; display: flex; flex-direction: column; }
   header { padding:8px; text-align:center; }
   h1 { font-size:16px; margin:6px 0; }
-  .panel {
-    display:flex; flex-wrap:wrap; gap:8px; justify-content:center;
-    padding:8px; background:#0f1115; position:sticky; top:0; z-index:10;
-  }
-  .panel > * {
-    background:#171a21; border:1px solid #2a2f3a; color:#e6e6eb;
-    border-radius:8px; padding:6px 10px; font-size:14px;
-  }
-  .stage {
-    width:100vw;
-    height:100vh;
-    overflow:hidden;
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    flex: 1;
-  }
-  canvas {
-    width: 100vw;
-    height: 100vh;
-    object-fit: contain;
-    image-rendering: pixelated;
-    display:block;
-  }
+  .panel { display:flex; flex-wrap:wrap; gap:8px; justify-content:center; padding:8px; background:#0f1115; position:sticky; top:0; z-index:10; }
+  .panel > * { background:#171a21; border:1px solid #2a2f3a; color:#e6e6eb; border-radius:8px; padding:6px 10px; font-size:14px; }
+  .stage { width:100vw; height:100vh; overflow:hidden; display:flex; align-items:center; justify-content:center; flex: 1; }
+  canvas { width: 100vw; height: 100vh; object-fit: contain; image-rendering: pixelated; display:block; }
   video { display:none; }
-  .palette-editor { display:flex; flex-wrap:wrap; gap:6px; justify-content:center; padding:6px; }
-  .swatch { display:flex; align-items:center; gap:4px; background:#111; border:1px solid #2a2f3a; border-radius:999px; padding:4px 6px; }
-  .swatch input[type="color"]{ width:28px; height:28px; border:none; background:none; }
-  .hidden { display:none !important; }
-  .palette-io { display:flex; gap:6px; flex-wrap:wrap; justify-content:center; }
-  .palette-io textarea {
-    width: 240px; height: 42px;
-    background:#0b0d12; color:#cfd3ff; border:1px solid #2a2f3a; border-radius:6px; padding:6px;
-    font-size:12px;
-  }
-  footer {
-    text-align: center;
-    font-size: 12px;
-    color: #777;
-    padding: 10px 0 14px;
-  }
+  footer { text-align: center; font-size: 12px; color: #777; padding: 10px 0 14px; }
 </style>
 </head>
 <body>
+
 <header>
   <h1>レトロ ドット変換</h1>
 </header>
 
 <div class="panel">
   <input type="file" id="file" accept="image/*">
-  <label>ドット数 <input id="dotSize" type="number" value="100" min="4" max="1024"></label>
+  <label>ドット数 <input id="dotSize" type="number" value="100" min="4" max="2048"></label>
   <label>色数 <input id="colorCount" type="number" value="8" min="1"></label>
   <select id="mode">
     <option value="preset">プリセット</option>
@@ -86,26 +44,15 @@
   <button id="switchCam">フロント/リア切替</button>
   <button id="save">保存</button>
   <button id="saveAll">一括保存</button>
-  <button id="saveColors">色保存</button>
 </div>
-
-<div class="palette-io">
-  <textarea id="paletteText" placeholder="例: 255.000.000,000.000.255,000.255.000"></textarea>
-  <button id="loadColors">色読み込み</button>
-</div>
-
-<div id="paletteEditor" class="palette-editor"></div>
 
 <div class="stage">
   <canvas id="canvas"></canvas>
   <video id="video" playsinline></video>
 </div>
 
-<footer>
-  Copyright © 2026 SirogomaAZARASI All rights reserved.
-</footer>
+<footer>Copyright © 2026 SirogomaAZARASI All rights reserved.</footer>
 
-<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 <script>
 const PRESETS = {
   sunset2: [[44,62,76],[66,75,82],[109,102,94],[163,132,104],[189,141,101],[211,158,108],[255,192,118],[204,206,185]],
@@ -117,66 +64,76 @@ const PRESETS = {
 };
 
 const canvas = document.getElementById('canvas');
-const ctx = canvas.getContext('2d', { willReadFrequently:true });
-const fileInput = document.getElementById('file');
-const dotSizeInput = document.getElementById('dotSize');
-const saveAllBtn = document.getElementById('saveAll');
+const ctx = canvas.getContext('2d', { willReadFrequently: true });
+ctx.imageSmoothingEnabled = false;
+const video = document.getElementById('video');
+
 let img = new Image();
+let stream = null;
+let useFront = false;
+let realtimeOn = false;
+let rafId = null;
+let fixedRandomPalette = null;
 
 function fitSize(sw,sh,d){
   const a=sw/sh;
-  return sw>=sh ? [d, Math.round(d/a)] : [Math.round(d*a), d];
+  return sw>=sh ? [d, Math.max(1,Math.round(d/a))] : [Math.max(1,Math.round(d*a)), d];
 }
-
 function quantize(imgData, pal){
   const d=imgData.data;
   for(let i=0;i<d.length;i+=4){
-    let best=pal[0], min=1e9;
+    let r=d[i],g=d[i+1],b=d[i+2], best=pal[0], min=1e9;
     for(const p of pal){
-      const dr=d[i]-p[0], dg=d[i+1]-p[1], db=d[i+2]-p[2];
+      const dr=r-p[0],dg=g-p[1],db=b-p[2];
       const dist=dr*dr+dg*dg+db*db;
       if(dist<min){ min=dist; best=p; }
     }
     d[i]=best[0]; d[i+1]=best[1]; d[i+2]=best[2];
   }
 }
-
-fileInput.onchange=e=>{
-  const f=e.target.files[0];
-  if(!f) return;
-  const r=new FileReader();
-  r.onload=()=>{ img.onload=()=>drawWithPreset('sunset2'); img.src=r.result; };
-  r.readAsDataURL(f);
-};
-
-function drawWithPreset(key){
-  const [w,h]=fitSize(img.width,img.height,parseInt(dotSizeInput.value,10));
+function drawFromVideo(){
+  if(!realtimeOn) return;
+  const [w,h]=fitSize(video.videoWidth||640, video.videoHeight||480, dotSize.value|0);
   canvas.width=w; canvas.height=h;
-  ctx.drawImage(img,0,0,w,h);
+  ctx.drawImage(video,0,0,w,h);
   const id=ctx.getImageData(0,0,w,h);
-  quantize(id, PRESETS[key]);
+  quantize(id, PRESETS[preset.value]);
   ctx.putImageData(id,0,0);
+  rafId=requestAnimationFrame(drawFromVideo);
 }
 
-saveAllBtn.onclick = async () => {
-  if(!img.src) return alert('画像を選んでください');
-  const zip = new JSZip();
-
-  // 元画像
-  const orig = await fetch(img.src).then(r=>r.blob());
-  zip.file('original.png', orig);
-
-  for(const key in PRESETS){
-    drawWithPreset(key);
-    const blob = await new Promise(res=>canvas.toBlob(res));
-    zip.file(key + '.png', blob);
+realtime.onclick=async()=>{
+  realtimeOn=!realtimeOn;
+  realtime.textContent = realtimeOn?'リアルタイム停止':'リアルタイム開始';
+  if(realtimeOn){
+    stream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode: useFront?'user':'environment' }, audio:false });
+    video.srcObject = stream; await video.play();
+    drawFromVideo();
+  }else{
+    cancelAnimationFrame(rafId);
+    if(stream) stream.getTracks().forEach(t=>t.stop());
   }
+};
 
-  const content = await zip.generateAsync({type:'blob'});
-  const a=document.createElement('a');
-  a.href=URL.createObjectURL(content);
-  a.download='palette_all.zip';
-  a.click();
+switchCam.onclick=async()=>{ useFront=!useFront; if(realtimeOn) realtime.onclick(); };
+
+saveAll.onclick = async () => {
+  if (!realtimeOn) { alert('リアルタイム中に使ってください'); return; }
+  const original = preset.value;
+  for (const key of Object.keys(PRESETS)) {
+    preset.value = key;
+    await new Promise(r=>setTimeout(r,120));
+    await new Promise(res=>{
+      canvas.toBlob(b=>{
+        const a=document.createElement('a');
+        a.href=URL.createObjectURL(b);
+        a.download=`camera_${key}.png`;
+        a.click();
+        res();
+      });
+    });
+  }
+  preset.value = original;
 };
 </script>
 </body>
