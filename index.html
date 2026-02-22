@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Dot Camera</title>
+<title>レトロドット変換</title>
 <style>
   body {
     margin:0;
@@ -25,17 +25,11 @@
     border-radius:8px; padding:6px 10px; font-size:14px;
   }
   .stage {
-    width:100vw;
-    height:100vh;
-    overflow:hidden;
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    flex: 1;
+    width:100vw; height:100vh; overflow:hidden;
+    display:flex; align-items:center; justify-content:center; flex:1;
   }
   canvas {
-    width: 100vw;
-    height: 100vh;
+    width:100vw; height:100vh;
     object-fit: contain;
     image-rendering: pixelated;
     display:block;
@@ -52,17 +46,12 @@
     font-size:12px;
   }
   footer {
-    text-align: center;
-    font-size: 12px;
-    color: #777;
-    padding: 10px 0 14px;
+    text-align:center; font-size:12px; color:#777; padding:10px 0 14px;
   }
 </style>
 </head>
 <body>
-<header>
-  <h1>Dot Camera</h1>
-</header>
+<header><h1>レトロ ドット変換</h1></header>
 
 <div class="panel">
   <input type="file" id="file" accept="image/*">
@@ -74,12 +63,10 @@
     <option value="custom">手動</option>
   </select>
   <select id="preset">
-    <option value="sunset2">Sunset</option>
+    <option value="sunset2">Sunset 2</option>
+    <option value="retro8">レトロ調</option>
+    <option value="oldgame">古いゲーム風</option>
     <option value="mono8">モノクロ</option>
-    <option value="gb8">古いゲーム風</option>
-    <option value="dusty5">くすみカラー</option>
-    <option value="vivid5">ビビッド</option>
-    <option value="pop5">ポップ</option>
   </select>
   <button id="convert">変換</button>
   <button id="realtime">リアルタイム開始</button>
@@ -89,7 +76,7 @@
 </div>
 
 <div class="palette-io">
-  <textarea id="paletteText" placeholder="例: 255.000.000,000.000.255,000.255.000,128.128.128"></textarea>
+  <textarea id="paletteText" placeholder="例: 255.000.000,000.000.255,000.255.000"></textarea>
   <button id="loadColors">色読み込み</button>
 </div>
 
@@ -100,21 +87,14 @@
   <video id="video" playsinline></video>
 </div>
 
-<footer>
-  Copyright © 2026 SirogomaAZARASI All rights reserved.
-</footer>
+<footer>Copyright © 2026 SirogomaAZARASI All rights reserved.</footer>
 
 <script>
 const PRESETS = {
-  sunset2: [
-    [44,62,76],[66,75,82],[109,102,94],[163,132,104],
-    [189,141,101],[211,158,108],[255,192,118],[204,206,185]
-  ],
-  mono8: [[0,0,0],[64,64,64],[128,128,128],[192,192,192],[255,255,255]],
-  gb8: [[15,56,15],[48,98,48],[139,172,15],[155,188,15],[220,240,140],[255,255,255]],
-  dusty5: [[37,40,61],[111,146,131],[166,117,161],[206,162,172],[239,217,206]],
-  vivid5: [[41,47,54],[78,205,196],[252,171,16],[255,107,107],[255,255,255]],
-  pop5: [[29,47,111],[131,144,250],[250,199,72],[249,233,236],[36,130,50]]
+  sunset2: [[44,62,76],[66,75,82],[109,102,94],[163,132,104],[189,141,101],[211,158,108],[255,192,118],[204,206,185]],
+  retro8: [[30,30,46],[66,81,100],[128,105,78],[180,128,89],[212,148,104],[255,183,128],[180,200,190],[240,240,240]],
+  oldgame: [[15,56,15],[48,98,48],[139,172,15],[155,188,15],[48,48,48],[120,120,120],[200,200,200],[255,255,255]],
+  mono8: [[0,0,0],[64,64,64],[128,128,128],[192,192,192],[255,255,255]]
 };
 
 const fileInput = document.getElementById('file');
@@ -133,166 +113,139 @@ const paletteText = document.getElementById('paletteText');
 
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d', { willReadFrequently: true });
+ctx.imageSmoothingEnabled = false;
+
 const video = document.getElementById('video');
-
 let img = new Image();
-let stream = null;
-let useFront = false;
-let realtimeOn = false;
-let rafId = null;
-let customPalette = [];
-let fixedRandomPalette = null;
+let stream = null, useFront = false, realtimeOn = false, rafId = null;
+let customPalette = [], fixedRandomPalette = null;
+let lastDrawSize = [0,0];
 
-function hexToRgb(hex){ const n=parseInt(hex.replace('#',''),16); return [(n>>16)&255,(n>>8)&255,n&255]; }
-function rgbToHex(r,g,b){ return '#'+[r,g,b].map(v=>v.toString(16).padStart(2,'0')).join(''); }
-function randomPalette(n){ return Array.from({length:n},()=>[Math.random()*255|0,Math.random()*255|0,Math.random()*255|0]); }
+const hexToRgb = h => { const n=parseInt(h.slice(1),16); return [(n>>16)&255,(n>>8)&255,n&255]; };
+const rgbToHex = (r,g,b) => '#'+[r,g,b].map(v=>v.toString(16).padStart(2,'0')).join('');
+const randomPalette = n => Array.from({length:n},()=>[Math.random()*255|0,Math.random()*255|0,Math.random()*255|0]);
 
+function buildPaletteEditor(n){
+  paletteEditor.innerHTML=''; customPalette=[];
+  for(let i=0;i<n;i++){
+    const w=document.createElement('div'); w.className='swatch';
+    const c=document.createElement('input'); c.type='color'; c.value=rgbToHex(...randomPalette(1)[0]);
+    c.oninput=drawFromImage; w.appendChild(c);
+    paletteEditor.appendChild(w); customPalette.push(c);
+  }
+}
 function buildPaletteEditorFromRGB(pal){
-  paletteEditor.innerHTML = ''; customPalette=[];
+  paletteEditor.innerHTML=''; customPalette=[];
   pal.forEach(rgb=>{
     const w=document.createElement('div'); w.className='swatch';
-    const c=document.createElement('input'); c.type='color';
-    c.value = rgbToHex(rgb[0],rgb[1],rgb[2]);
+    const c=document.createElement('input'); c.type='color'; c.value=rgbToHex(...rgb);
     c.oninput=drawFromImage; w.appendChild(c);
     paletteEditor.appendChild(w); customPalette.push(c);
   });
 }
 
-function buildPaletteEditor(n){
-  paletteEditor.innerHTML = ''; customPalette=[];
-  for(let i=0;i<n;i++){
-    const w=document.createElement('div'); w.className='swatch';
-    const c=document.createElement('input'); c.type='color';
-    c.value='#'+Math.floor(Math.random()*0xffffff).toString(16).padStart(6,'0');
-    c.oninput=drawFromImage; w.appendChild(c);
-    paletteEditor.appendChild(w); customPalette.push(c);
-  }
-}
-
 function getActivePalette(){
-  const n=parseInt(colorCountInput.value,10);
-  const mode=modeSelect.value;
-  if(mode==='preset') return PRESETS[presetSelect.value];
-  if(mode==='random'){
-    if(!fixedRandomPalette || fixedRandomPalette.length!==n){
-      fixedRandomPalette = randomPalette(n);
-    }
+  const n=+colorCountInput.value;
+  if(modeSelect.value==='preset') return PRESETS[presetSelect.value];
+  if(modeSelect.value==='random'){
+    if(!fixedRandomPalette || fixedRandomPalette.length!==n) fixedRandomPalette=randomPalette(n);
     return fixedRandomPalette;
   }
-  return customPalette.map(i=>hexToRgb(i.value));
+  return customPalette.map(c=>hexToRgb(c.value));
 }
-
 function fitSize(sw,sh,d){
   const a=sw/sh;
-  return sw>=sh ? [d, Math.max(1,Math.round(d/a))] : [Math.max(1,Math.round(d*a)), d];
+  return sw>=sh ? [d,Math.max(1,Math.round(d/a))] : [Math.max(1,Math.round(d*a)),d];
 }
-
-function quantize(imgData, pal){
+function quantize(imgData,pal){
   const d=imgData.data;
   for(let i=0;i<d.length;i+=4){
-    let r=d[i],g=d[i+1],b=d[i+2], best=pal[0], min=1e9;
+    let r=d[i],g=d[i+1],b=d[i+2],best=pal[0],min=1e9;
     for(const p of pal){
-      const dr=r-p[0],dg=g-p[1],db=b-p[2];
-      const dist=dr*dr+dg*dg+db*db;
-      if(dist<min){ min=dist; best=p; }
+      const dr=r-p[0],dg=g-p[1],db=b-p[2],dist=dr*dr+dg*dg+db*db;
+      if(dist<min){min=dist;best=p;}
     }
     d[i]=best[0]; d[i+1]=best[1]; d[i+2]=best[2];
   }
 }
-
 function drawFromImage(){
   if(!img.src) return;
-  const [w,h]=fitSize(img.width,img.height,parseInt(dotSizeInput.value,10));
-  canvas.width=w; canvas.height=h;
+  const [w,h]=fitSize(img.width,img.height,+dotSizeInput.value);
+  canvas.width=w; canvas.height=h; ctx.imageSmoothingEnabled=false;
   ctx.drawImage(img,0,0,w,h);
   const id=ctx.getImageData(0,0,w,h);
-  quantize(id, getActivePalette());
+  quantize(id,getActivePalette());
   ctx.putImageData(id,0,0);
+  lastDrawSize=[w,h];
 }
-
 fileInput.onchange=e=>{
   const f=e.target.files[0]; if(!f) return;
   const r=new FileReader();
   r.onload=()=>{ img.onload=drawFromImage; img.src=r.result; };
   r.readAsDataURL(f);
 };
-
 convertBtn.onclick=()=>{
-  if(modeSelect.value==='random'){
-    fixedRandomPalette = randomPalette(parseInt(colorCountInput.value,10));
-  }
+  if(modeSelect.value==='random') fixedRandomPalette=randomPalette(+colorCountInput.value);
   drawFromImage();
 };
 
 function updatePaletteUI(){
   paletteEditor.classList.toggle('hidden', modeSelect.value!=='custom');
-  if(modeSelect.value==='custom'){
-    const n=parseInt(colorCountInput.value,10);
-    if(customPalette.length !== n) buildPaletteEditor(n);
-  }
+  if(modeSelect.value==='custom' && customPalette.length!==+colorCountInput.value) buildPaletteEditor(+colorCountInput.value);
 }
 modeSelect.onchange=updatePaletteUI;
 colorCountInput.onchange=updatePaletteUI;
 updatePaletteUI();
 
-loadColorsBtn.onclick = () => {
-  const text = paletteText.value.trim();
-  if(!text) return alert('色コードを入力してください');
+loadColorsBtn.onclick=()=>{
+  const t=paletteText.value.trim(); if(!t) return alert('色コードを入力してください');
   try{
-    const parts = text.split(',').map(s=>{
-      const [r,g,b] = s.split('.').map(v=>parseInt(v,10));
-      if([r,g,b].some(v=>isNaN(v) || v<0 || v>255)) throw new Error();
-      return [r,g,b];
-    });
-    colorCountInput.value = parts.length;
-    modeSelect.value = 'custom';
-    fixedRandomPalette = null;
-    buildPaletteEditorFromRGB(parts);
-    drawFromImage();
-  }catch(e){
-    alert('形式が正しくありません');
-  }
+    const pal=t.split(',').map(s=>{ const [r,g,b]=s.split('.').map(v=>+v); return [r,g,b]; });
+    colorCountInput.value=pal.length; modeSelect.value='custom'; fixedRandomPalette=null;
+    buildPaletteEditorFromRGB(pal); drawFromImage();
+  }catch{ alert('形式エラー'); }
 };
 
-saveColorsBtn.onclick = async () => {
-  const pal = getActivePalette();
-  const text = pal.map(p =>
-    `${String(p[0]).padStart(3,'0')}.${String(p[1]).padStart(3,'0')}.${String(p[2]).padStart(3,'0')}`
-  ).join(',');
-  await navigator.clipboard.writeText(text);
-  alert('コピーしました');
+saveColorsBtn.onclick=async()=>{
+  const pal=getActivePalette();
+  const text=pal.map(p=>`${String(p[0]).padStart(3,'0')}.${String(p[1]).padStart(3,'0')}.${String(p[2]).padStart(3,'0')}`).join(',');
+  await navigator.clipboard.writeText(text); alert('コピーしました');
 };
 
 async function startCamera(){
-  if(stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; }
-  stream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode: useFront?'user':'environment' }, audio:false });
-  video.srcObject = stream; await video.play();
+  if(stream) stream.getTracks().forEach(t=>t.stop());
+  stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:useFront?'user':'environment'},audio:false});
+  video.srcObject=stream; await video.play();
 }
 function drawFromVideo(){
   if(!realtimeOn) return;
-  const [w,h]=fitSize(video.videoWidth||640, video.videoHeight||480, parseInt(dotSizeInput.value,10));
-  canvas.width=w; canvas.height=h;
+  const [w,h]=fitSize(video.videoWidth||640,video.videoHeight||480,+dotSizeInput.value);
+  canvas.width=w; canvas.height=h; ctx.imageSmoothingEnabled=false;
   ctx.drawImage(video,0,0,w,h);
   const id=ctx.getImageData(0,0,w,h);
-  quantize(id, getActivePalette());
-  ctx.putImageData(id,0,0);
+  quantize(id,getActivePalette()); ctx.putImageData(id,0,0);
+  lastDrawSize=[w,h];
   rafId=requestAnimationFrame(drawFromVideo);
 }
 realtimeBtn.onclick=async()=>{
   realtimeOn=!realtimeOn;
-  realtimeBtn.textContent = realtimeOn?'リアルタイム停止':'リアルタイム開始';
+  realtimeBtn.textContent=realtimeOn?'リアルタイム停止':'リアルタイム開始';
   if(realtimeOn){ await startCamera(); drawFromVideo(); }
-  else { if(rafId) cancelAnimationFrame(rafId); if(stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; } }
+  else{ cancelAnimationFrame(rafId); if(stream) stream.getTracks().forEach(t=>t.stop()); }
 };
 switchCamBtn.onclick=async()=>{ useFront=!useFront; if(realtimeOn) await startCamera(); };
 
-saveBtn.onclick=()=>canvas.toBlob(b=>{
-  const u=URL.createObjectURL(b);
+saveBtn.onclick=()=>{
+  if(!lastDrawSize[0]) return;
+  const scale=12;
+  const out=document.createElement('canvas');
+  out.width=lastDrawSize[0]*scale; out.height=lastDrawSize[1]*scale;
+  const octx=out.getContext('2d');
+  octx.imageSmoothingEnabled=false;
+  octx.drawImage(canvas,0,0,out.width,out.height);
   const a=document.createElement('a');
-  a.href=u; a.download='retro.png';
-  a.click();
-  URL.revokeObjectURL(u);
-});
+  a.href=out.toDataURL('image/png'); a.download='retro.png'; a.click();
+};
 </script>
 </body>
 </html>
