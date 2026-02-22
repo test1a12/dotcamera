@@ -5,19 +5,61 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>レトロドット変換</title>
 <style>
-  body { margin:0; font-family: system-ui, -apple-system, sans-serif; background:#0f1115; color:#e6e6eb; min-height: 100vh; display: flex; flex-direction: column; }
+  body {
+    margin:0;
+    font-family: system-ui, -apple-system, sans-serif;
+    background:#0f1115;
+    color:#e6e6eb;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
   header { padding:8px; text-align:center; }
   h1 { font-size:16px; margin:6px 0; }
-  .panel { display:flex; flex-wrap:wrap; gap:8px; justify-content:center; padding:8px; background:#0f1115; position:sticky; top:0; z-index:10; }
-  .panel > * { background:#171a21; border:1px solid #2a2f3a; color:#e6e6eb; border-radius:8px; padding:6px 10px; font-size:14px; }
-  .stage { width:100vw; height:100vh; overflow:hidden; display:flex; align-items:center; justify-content:center; flex: 1; }
-  canvas { width: 100vw; height: 100vh; object-fit: contain; image-rendering: pixelated; display:block; }
+  .panel {
+    display:flex; flex-wrap:wrap; gap:8px; justify-content:center;
+    padding:8px; background:#0f1115; position:sticky; top:0; z-index:10;
+  }
+  .panel > * {
+    background:#171a21; border:1px solid #2a2f3a; color:#e6e6eb;
+    border-radius:8px; padding:6px 10px; font-size:14px;
+  }
+  .stage {
+    width:100vw;
+    height:100vh;
+    overflow:hidden;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    flex: 1;
+  }
+  canvas {
+    width: 100vw;
+    height: 100vh;
+    object-fit: contain;
+    image-rendering: pixelated;
+    display:block;
+  }
   video { display:none; }
-  footer { text-align: center; font-size: 12px; color: #777; padding: 10px 0 14px; }
+  .palette-editor { display:flex; flex-wrap:wrap; gap:6px; justify-content:center; padding:6px; }
+  .swatch { display:flex; align-items:center; gap:4px; background:#111; border:1px solid #2a2f3a; border-radius:999px; padding:4px 6px; }
+  .swatch input[type="color"]{ width:28px; height:28px; border:none; background:none; }
+  .hidden { display:none !important; }
+  .palette-io { display:flex; gap:6px; flex-wrap:wrap; justify-content:center; }
+  .palette-io textarea {
+    width: 240px; height: 42px;
+    background:#0b0d12; color:#cfd3ff; border:1px solid #2a2f3a; border-radius:6px; padding:6px;
+    font-size:12px;
+  }
+  footer {
+    text-align: center;
+    font-size: 12px;
+    color: #777;
+    padding: 10px 0 14px;
+  }
 </style>
 </head>
 <body>
-
 <header>
   <h1>レトロ ドット変換</h1>
 </header>
@@ -44,18 +86,31 @@
   <button id="switchCam">フロント/リア切替</button>
   <button id="save">保存</button>
   <button id="saveAll">一括保存</button>
+  <button id="saveColors">色保存</button>
 </div>
+
+<div class="palette-io">
+  <textarea id="paletteText" placeholder="例: 255.000.000,000.000.255,000.255.000,128.128.128"></textarea>
+  <button id="loadColors">色読み込み</button>
+</div>
+
+<div id="paletteEditor" class="palette-editor"></div>
 
 <div class="stage">
   <canvas id="canvas"></canvas>
   <video id="video" playsinline></video>
 </div>
 
-<footer>Copyright © 2026 SirogomaAZARASI All rights reserved.</footer>
+<footer>
+  Copyright © 2026 SirogomaAZARASI All rights reserved.
+</footer>
 
 <script>
 const PRESETS = {
-  sunset2: [[44,62,76],[66,75,82],[109,102,94],[163,132,104],[189,141,101],[211,158,108],[255,192,118],[204,206,185]],
+  sunset2: [
+    [44,62,76],[66,75,82],[109,102,94],[163,132,104],
+    [189,141,101],[211,158,108],[255,192,118],[204,206,185]
+  ],
   mono8: [[0,0,0],[64,64,64],[128,128,128],[192,192,192],[255,255,255]],
   gb8: [[15,56,15],[48,98,48],[139,172,15],[155,188,15],[220,240,140],[255,255,255]],
   dusty5: [[37,40,61],[111,146,131],[166,117,161],[206,162,172],[239,217,206]],
@@ -63,9 +118,25 @@ const PRESETS = {
   pop5: [[29,47,111],[131,144,250],[250,199,72],[249,233,236],[36,130,50]]
 };
 
+const fileInput = document.getElementById('file');
+const dotSizeInput = document.getElementById('dotSize');
+const colorCountInput = document.getElementById('colorCount');
+const modeSelect = document.getElementById('mode');
+const presetSelect = document.getElementById('preset');
+const paletteEditor = document.getElementById('paletteEditor');
+const convertBtn = document.getElementById('convert');
+const realtimeBtn = document.getElementById('realtime');
+const switchCamBtn = document.getElementById('switchCam');
+const saveBtn = document.getElementById('save');
+const saveAllBtn = document.getElementById('saveAll');
+const saveColorsBtn = document.getElementById('saveColors');
+const loadColorsBtn = document.getElementById('loadColors');
+const paletteText = document.getElementById('paletteText');
+
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d', { willReadFrequently: true });
 ctx.imageSmoothingEnabled = false;
+
 const video = document.getElementById('video');
 
 let img = new Image();
@@ -73,12 +144,53 @@ let stream = null;
 let useFront = false;
 let realtimeOn = false;
 let rafId = null;
+let customPalette = [];
 let fixedRandomPalette = null;
+
+function hexToRgb(hex){ const n=parseInt(hex.replace('#',''),16); return [(n>>16)&255,(n>>8)&255,n&255]; }
+function rgbToHex(r,g,b){ return '#'+[r,g,b].map(v=>v.toString(16).padStart(2,'0')).join(''); }
+function randomPalette(n){ return Array.from({length:n},()=>[Math.random()*255|0,Math.random()*255|0,Math.random()*255|0]); }
+
+function buildPaletteEditorFromRGB(pal){
+  paletteEditor.innerHTML = ''; customPalette=[];
+  pal.forEach(rgb=>{
+    const w=document.createElement('div'); w.className='swatch';
+    const c=document.createElement('input'); c.type='color';
+    c.value = rgbToHex(rgb[0],rgb[1],rgb[2]);
+    c.oninput=drawFromImage; w.appendChild(c);
+    paletteEditor.appendChild(w); customPalette.push(c);
+  });
+}
+
+function buildPaletteEditor(n){
+  paletteEditor.innerHTML = ''; customPalette=[];
+  for(let i=0;i<n;i++){
+    const w=document.createElement('div'); w.className='swatch';
+    const c=document.createElement('input'); c.type='color';
+    c.value='#'+Math.floor(Math.random()*0xffffff).toString(16).padStart(6,'0');
+    c.oninput=drawFromImage; w.appendChild(c);
+    paletteEditor.appendChild(w); customPalette.push(c);
+  }
+}
+
+function getActivePalette(){
+  const n=parseInt(colorCountInput.value,10);
+  const mode=modeSelect.value;
+  if(mode==='preset') return PRESETS[presetSelect.value];
+  if(mode==='random'){
+    if(!fixedRandomPalette || fixedRandomPalette.length!==n){
+      fixedRandomPalette = randomPalette(n);
+    }
+    return fixedRandomPalette;
+  }
+  return customPalette.map(i=>hexToRgb(i.value));
+}
 
 function fitSize(sw,sh,d){
   const a=sw/sh;
   return sw>=sh ? [d, Math.max(1,Math.round(d/a))] : [Math.max(1,Math.round(d*a)), d];
 }
+
 function quantize(imgData, pal){
   const d=imgData.data;
   for(let i=0;i<d.length;i+=4){
@@ -91,49 +203,130 @@ function quantize(imgData, pal){
     d[i]=best[0]; d[i+1]=best[1]; d[i+2]=best[2];
   }
 }
-function drawFromVideo(){
-  if(!realtimeOn) return;
-  const [w,h]=fitSize(video.videoWidth||640, video.videoHeight||480, dotSize.value|0);
+
+function drawFromImage(){
+  if(!img.src) return;
+  const [w,h]=fitSize(img.width,img.height,parseInt(dotSizeInput.value,10));
   canvas.width=w; canvas.height=h;
-  ctx.drawImage(video,0,0,w,h);
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(img,0,0,w,h);
   const id=ctx.getImageData(0,0,w,h);
-  quantize(id, PRESETS[preset.value]);
+  quantize(id, getActivePalette());
   ctx.putImageData(id,0,0);
-  rafId=requestAnimationFrame(drawFromVideo);
 }
 
-realtime.onclick=async()=>{
-  realtimeOn=!realtimeOn;
-  realtime.textContent = realtimeOn?'リアルタイム停止':'リアルタイム開始';
-  if(realtimeOn){
-    stream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode: useFront?'user':'environment' }, audio:false });
-    video.srcObject = stream; await video.play();
-    drawFromVideo();
-  }else{
-    cancelAnimationFrame(rafId);
-    if(stream) stream.getTracks().forEach(t=>t.stop());
+fileInput.onchange=e=>{
+  const f=e.target.files[0]; if(!f) return;
+  const r=new FileReader();
+  r.onload=()=>{ img.onload=drawFromImage; img.src=r.result; };
+  r.readAsDataURL(f);
+};
+
+convertBtn.onclick=()=>{
+  if(modeSelect.value==='random'){
+    fixedRandomPalette = randomPalette(parseInt(colorCountInput.value,10));
+  }
+  drawFromImage();
+};
+
+function updatePaletteUI(){
+  paletteEditor.classList.toggle('hidden', modeSelect.value!=='custom');
+  if(modeSelect.value==='custom'){
+    const n=parseInt(colorCountInput.value,10);
+    if(customPalette.length !== n) buildPaletteEditor(n);
+  }
+}
+modeSelect.onchange=updatePaletteUI;
+colorCountInput.onchange=updatePaletteUI;
+updatePaletteUI();
+
+loadColorsBtn.onclick = () => {
+  const text = paletteText.value.trim();
+  if(!text) return alert('色コードを入力してください');
+  try{
+    const parts = text.split(',').map(s=>{
+      const [r,g,b] = s.split('.').map(v=>parseInt(v,10));
+      if([r,g,b].some(v=>isNaN(v) || v<0 || v>255)) throw new Error();
+      return [r,g,b];
+    });
+    colorCountInput.value = parts.length;
+    modeSelect.value = 'custom';
+    fixedRandomPalette = null;
+    buildPaletteEditorFromRGB(parts);
+    drawFromImage();
+  }catch(e){
+    alert('形式が正しくありません');
   }
 };
 
-switchCam.onclick=async()=>{ useFront=!useFront; if(realtimeOn) realtime.onclick(); };
+saveColorsBtn.onclick = async () => {
+  const pal = getActivePalette();
+  const text = pal.map(p =>
+    `${String(p[0]).padStart(3,'0')}.${String(p[1]).padStart(3,'0')}.${String(p[2]).padStart(3,'0')}`
+  ).join(',');
+  await navigator.clipboard.writeText(text);
+  alert('コピーしました');
+};
 
-saveAll.onclick = async () => {
-  if (!realtimeOn) { alert('リアルタイム中に使ってください'); return; }
-  const original = preset.value;
+async function startCamera(){
+  if(stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; }
+  stream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode: useFront?'user':'environment' }, audio:false });
+  video.srcObject = stream; await video.play();
+}
+function drawFromVideo(){
+  if(!realtimeOn) return;
+  const [w,h]=fitSize(video.videoWidth||640, video.videoHeight||480, parseInt(dotSizeInput.value,10));
+  canvas.width=w; canvas.height=h;
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(video,0,0,w,h);
+  const id=ctx.getImageData(0,0,w,h);
+  quantize(id, getActivePalette());
+  ctx.putImageData(id,0,0);
+  rafId=requestAnimationFrame(drawFromVideo);
+}
+realtimeBtn.onclick=async()=>{
+  realtimeOn=!realtimeOn;
+  realtimeBtn.textContent = realtimeOn?'リアルタイム停止':'リアルタイム開始';
+  if(realtimeOn){ await startCamera(); drawFromVideo(); }
+  else { if(rafId) cancelAnimationFrame(rafId); if(stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; } }
+};
+switchCamBtn.onclick=async()=>{ useFront=!useFront; if(realtimeOn) await startCamera(); };
+
+saveBtn.onclick=()=>canvas.toBlob(b=>{
+  const u=URL.createObjectURL(b);
+  const a=document.createElement('a');
+  a.href=u; a.download='retro.png';
+  a.click();
+  URL.revokeObjectURL(u);
+}, 'image/png');
+
+saveAllBtn.onclick = async () => {
+  if (!img.src) { alert('画像を読み込んでください'); return; }
+  const originalMode = modeSelect.value;
+  const originalPreset = presetSelect.value;
+  const originalRandom = fixedRandomPalette ? [...fixedRandomPalette] : null;
+
   for (const key of Object.keys(PRESETS)) {
-    preset.value = key;
-    await new Promise(r=>setTimeout(r,120));
+    modeSelect.value = 'preset';
+    presetSelect.value = key;
+    fixedRandomPalette = null;
+    drawFromImage();
+    await new Promise(r=>setTimeout(r,80));
     await new Promise(res=>{
       canvas.toBlob(b=>{
+        const u=URL.createObjectURL(b);
         const a=document.createElement('a');
-        a.href=URL.createObjectURL(b);
-        a.download=`camera_${key}.png`;
+        a.href=u; a.download=`retro_${key}.png`;
         a.click();
+        URL.revokeObjectURL(u);
         res();
-      });
+      }, 'image/png');
     });
   }
-  preset.value = original;
+  modeSelect.value = originalMode;
+  presetSelect.value = originalPreset;
+  fixedRandomPalette = originalRandom;
+  drawFromImage();
 };
 </script>
 </body>
