@@ -7,5 +7,9 @@
 # dotcamera
 カメラからのリアルタイムの映像や写真ライブラリの写真を
 ドットに変えるhtmlコードです。
-
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/SirogomaAZARASI/SirogomaAZARASI/output/github-contribution-grid-snake-dark.svg">
+  <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/SirogomaAZARASI/SirogomaAZARASI/output/github-contribution-grid-snake.svg">
+  <img alt="github contribution grid snake animation" src="https://raw.githubusercontent.com/SirogomaAZARASI/SirogomaAZARASI/output/github-contribution-grid-snake.svg">
+</picture>
 
